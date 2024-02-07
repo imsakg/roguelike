@@ -3,6 +3,8 @@ use specs::prelude::*;
 use specs_derive::Component;
 use std::cmp::{max, min};
 
+use roguelike::map::*;
+
 #[derive(Component)]
 struct Position {
     x: i32,
@@ -18,48 +20,10 @@ struct Renderable {
 #[derive(Component, Debug)]
 struct Player {}
 
-#[derive(Copy, Clone, PartialEq)]
-enum TileType {
-    Wall,
-    Floor,
-}
-
 struct State {
     ecs: World,
 }
 
-pub fn xy_idx(x: i32, y: i32) -> usize {
-    (y as usize * 80) + x as usize
-}
-
-fn new_map() -> Vec<TileType> {
-    let mut map = vec![TileType::Floor; 80 * 50];
-
-    // Make the boundaries walls
-    for x in 0..80 {
-        map[xy_idx(x, 0)] = TileType::Wall;
-        map[xy_idx(x, 49)] = TileType::Wall;
-    }
-    for y in 0..50 {
-        map[xy_idx(0, y)] = TileType::Wall;
-        map[xy_idx(79, y)] = TileType::Wall;
-    }
-
-    // Now we'll randomly splat a bunch of walls. It won't be pretty, but it's a decent illustration.
-    // First, obtain the thread-local RNG:
-    let mut rng = RandomNumberGenerator::new();
-
-    for _i in 0..400 {
-        let x = rng.roll_dice(1, 79);
-        let y = rng.roll_dice(1, 49);
-        let idx = xy_idx(x, y);
-        if idx != xy_idx(40, 25) {
-            map[idx] = TileType::Wall;
-        }
-    }
-
-    map
-}
 fn try_move_player(delta_x: i32, delta_y: i32, ecs: &mut World) {
     let mut positions = ecs.write_storage::<Position>();
     let mut players = ecs.write_storage::<Player>();
@@ -79,14 +43,21 @@ fn player_input(gs: &mut State, ctx: &mut BTerm) {
     match ctx.key {
         None => {} // Nothing happened
         Some(key) => match key {
-            VirtualKeyCode::Left => try_move_player(-1, 0, &mut gs.ecs),
-            VirtualKeyCode::Right => try_move_player(1, 0, &mut gs.ecs),
-            VirtualKeyCode::Up => try_move_player(0, -1, &mut gs.ecs),
-            VirtualKeyCode::Down => try_move_player(0, 1, &mut gs.ecs),
-            VirtualKeyCode::W => try_move_player(0, -1, &mut gs.ecs),
-            VirtualKeyCode::A => try_move_player(-1, 0, &mut gs.ecs),
-            VirtualKeyCode::S => try_move_player(0, 1, &mut gs.ecs),
-            VirtualKeyCode::D => try_move_player(1, 0, &mut gs.ecs),
+            VirtualKeyCode::Left | VirtualKeyCode::Numpad4 | VirtualKeyCode::H => {
+                try_move_player(-1, 0, &mut gs.ecs)
+            }
+
+            VirtualKeyCode::Right | VirtualKeyCode::Numpad6 | VirtualKeyCode::L => {
+                try_move_player(1, 0, &mut gs.ecs)
+            }
+
+            VirtualKeyCode::Up | VirtualKeyCode::Numpad8 | VirtualKeyCode::K => {
+                try_move_player(0, -1, &mut gs.ecs)
+            }
+
+            VirtualKeyCode::Down | VirtualKeyCode::Numpad2 | VirtualKeyCode::J => {
+                try_move_player(0, 1, &mut gs.ecs)
+            }
 
             _ => {}
         },
@@ -157,14 +128,23 @@ fn main() -> BError {
     let context = BTermBuilder::simple80x50()
         .with_title("Roguelike Tutorial")
         .build()?;
+
     let mut gs = State { ecs: World::new() };
+
     gs.ecs.register::<Position>();
     gs.ecs.register::<Renderable>();
     gs.ecs.register::<Player>();
 
+    let (rooms, map) = new_map_rooms_and_corridors();
+    gs.ecs.insert(map);
+    let (player_x, player_y) = rooms[0].center();
+
     gs.ecs
         .create_entity()
-        .with(Position { x: 40, y: 25 })
+        .with(Position {
+            x: player_x,
+            y: player_y,
+        })
         .with(Renderable {
             glyph: to_cp437('@'),
             fg: RGB::named(YELLOW),
@@ -172,8 +152,6 @@ fn main() -> BError {
         })
         .with(Player {})
         .build();
-
-    gs.ecs.insert(new_map());
 
     main_loop(context, gs)
 }
